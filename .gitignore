@@ -1,0 +1,13 @@
+
+Debug/
+.idea
+.vs
+
+*.sln
+*.csproj
+*.vcxproj
+*.filters
+*.user
+
+.vs
+x64
