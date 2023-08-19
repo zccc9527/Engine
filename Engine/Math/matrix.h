@@ -1,8 +1,8 @@
-#pragma once
+ï»¿#pragma once
 #include "vector.h"
 #include <assert.h>
 
-//¾ØÕóÄ£°åÀà
+//çŸ©é˜µæ¨¡æ¿ç±»
 template<typename T, int Rows, int Cols>
 struct Matrix
 {

@@ -1,7 +1,7 @@
-#pragma once
+ï»¿#pragma once
 #include <stdint.h>
 
-//¶şÎ¬ÏòÁ¿Ä£°åÀà
+//äºŒç»´å‘é‡æ¨¡æ¿ç±»
 template<typename T>
 struct Vector2Type
 {
@@ -15,7 +15,7 @@ struct Vector2Type
 
 };
 
-//ÈıÎ¬ÏòÁ¿Ä£°åÀà
+//ä¸‰ç»´å‘é‡æ¨¡æ¿ç±»
 template<typename T>
 struct Vector3Type : Vector2Type<T>
 {
@@ -26,7 +26,7 @@ struct Vector3Type : Vector2Type<T>
 	Vector3Type() : Vector3Type(T{}){}
 };
 
-//ËÄÎ¬ÏòÁ¿Ä£°åÀà£¬Í¨³£ÓÃÓÚ¾ØÕó¼ÆËã£¬rgba
+//å››ç»´å‘é‡æ¨¡æ¿ç±»ï¼Œé€šå¸¸ç”¨äºçŸ©é˜µè®¡ç®—ï¼Œrgba
 template<typename T>
 struct Vector4Type : Vector3Type<T>
 {
@@ -38,7 +38,7 @@ struct Vector4Type : Vector3Type<T>
 	Vector4Type() : Vector4Type(T{}) {}
 };
 
-//·½±ãÊ¹ÓÃµÄÖØÃüÃû
+//æ–¹ä¾¿ä½¿ç”¨çš„é‡å‘½å
 using Vector2f = Vector2Type<float>;
 using Vector2d = Vector2Type<double>;
 using Vector2 = Vector2Type<int>;
