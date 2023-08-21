@@ -31,6 +31,12 @@ int main()
 
 int CALLBACK WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd)
 {
+	AllocConsole();
+	SetConsoleTitle(L"Output");
+	FILE* tempFile = nullptr;
+	freopen_s(&tempFile, "conin$", "r+t", stdin);
+	freopen_s(&tempFile, "conout$", "w+t", stdout);
+	
 	Application* app = Application::Get();
 	if (!app->Init(hInstance, __TEXT("Engine"), 100, 100, 800, 600))
 	{

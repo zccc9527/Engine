@@ -1,5 +1,8 @@
 ﻿#include "application.h"
 #include "IInputProcessor.h"
+#include <windowsx.h>
+#include "ApplicationMessageHandle.h"
+#include <iostream>
 
 Application* Application::app = nullptr;
 
@@ -10,6 +13,11 @@ Application* Application::Get()
 		app = new Application();
 	}
 	return app;
+}
+
+Application::Application()
+{
+	MainInputProcessor = new ApplicationMessageHandle();
 }
 
 bool Application::Init(HINSTANCE hInstance, const wchar_t* title, int x, int y, int width, int height)
@@ -35,9 +43,20 @@ bool Application::Run()
 	{
 		TranslateMessage(&msg); //翻译消息
 		DispatchMessage(&msg);  //转发给消息处理函数
+
+		Tick(0);
 	}
 
 	return (int)msg.wParam;
+}
+
+void Application::Tick(float DeltaTime)
+{
+	MainInputProcessor->Tick(DeltaTime);
+	for (IInputProcessor* InputProcessor : InputProcessors)
+	{
+		InputProcessor->Tick(DeltaTime);
+	}
 }
 
 void Application::RegisterInputProcessor(IInputProcessor* InputProcessor, const int Index /*= -1*/)
@@ -68,17 +87,188 @@ void Application::UnRegisterInputProcessor(IInputProcessor* InputProcessor)
 	}
 }
 
+EKeyState Application::GetControlKeyState()
+{
+	return bPressedControl ? EKeyState::IE_Pressed : EKeyState::IE_Released;
+}
+
+EKeyState Application::GetShiftKeyState()
+{
+	return bPressedShift ? EKeyState::IE_Pressed : EKeyState::IE_Released;
+}
+
 LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	if (app)
+	//ClientToScreen,客户端坐标到屏幕坐标
+	//ClipCursor,限制鼠标在矩形内移动，矩形坐标为屏幕坐标
+	//DragDetect,是否在拖动
+
+	if (msg == WM_DESTROY)
 	{
-		for (IInputProcessor* InputProcessor : app->InputProcessors)
+		PostQuitMessage(0);
+	}
+	Get()->bPressedControl = (wParam & MK_CONTROL) ? false : true;
+	Get()->bPressedShift = (wParam & MK_SHIFT) ? false : true;
+	switch (msg)
+	{
+	//鼠标事件
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONDBLCLK:
+	case WM_LBUTTONUP:
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONDBLCLK:
+	case WM_MBUTTONUP:
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONDBLCLK:
+	case WM_RBUTTONUP:
+	case WM_XBUTTONDOWN:
+	case WM_XBUTTONDBLCLK:
+	case WM_XBUTTONUP:
+	{
+		int xPos = GET_X_LPARAM(lParam);
+		int yPos = GET_Y_LPARAM(lParam);
+		const Vector2d MousePosition = Vector2d(xPos, yPos);
+		EMouseButton MouseButton = EMouseButton::Invalid;
+		bool bMouseUp = false;
+		bool bDoubleClick = false;
+		switch (msg)
 		{
-			if (InputProcessor->ProcessMessage(hWnd, msg, wParam, lParam))
+		case WM_LBUTTONDOWN:
+			MouseButton = EMouseButton::Left;
+			break;
+		case WM_LBUTTONDBLCLK:
+			MouseButton = EMouseButton::Left;
+			bDoubleClick = true;
+			break;
+		case WM_LBUTTONUP:
+			MouseButton = EMouseButton::Left;
+			bMouseUp = true;
+			break;
+		case WM_MBUTTONDOWN:
+			MouseButton = EMouseButton::Middle;
+			break;
+		case WM_MBUTTONDBLCLK:
+			MouseButton = EMouseButton::Middle;
+			bDoubleClick = true;
+			break;
+		case WM_MBUTTONUP:
+			MouseButton = EMouseButton::Middle;
+			bMouseUp = true;
+			break;
+		case WM_RBUTTONDOWN:
+			MouseButton = EMouseButton::Right;
+			break;
+		case WM_RBUTTONDBLCLK:
+			MouseButton = EMouseButton::Right;
+			bDoubleClick = true;
+			break;
+		case WM_RBUTTONUP:
+			MouseButton = EMouseButton::Right;
+			bMouseUp = true;
+			break;
+		case WM_XBUTTONDOWN:
+			MouseButton = GET_XBUTTON_WPARAM(wParam) == XBUTTON1 ? EMouseButton::XButton01 : EMouseButton::XButton02;
+			break;
+		case WM_XBUTTONDBLCLK:
+			MouseButton = GET_XBUTTON_WPARAM(wParam) == XBUTTON1 ? EMouseButton::XButton01 : EMouseButton::XButton02;
+			bDoubleClick = true;
+			break;
+		case WM_XBUTTONUP:
+			MouseButton = GET_XBUTTON_WPARAM(wParam) == XBUTTON1 ? EMouseButton::XButton01 : EMouseButton::XButton02;
+			bMouseUp = true;
+			break;
+		}
+		if (bMouseUp)
+		{
+			Get()->MainInputProcessor->HandleMouseButtonUp(MouseButton, MousePosition);
+			for (IInputProcessor* InputProcessor : Get()->InputProcessors)
 			{
-				break;
+				InputProcessor->HandleMouseButtonUp(MouseButton, MousePosition);
 			}
 		}
+		else if (bDoubleClick)
+		{
+			Get()->MainInputProcessor->HandleMouseButtonDoubleClick(MouseButton, MousePosition);
+			for (IInputProcessor* InputProcessor : Get()->InputProcessors)
+			{
+				InputProcessor->HandleMouseButtonDoubleClick(MouseButton, MousePosition);
+			}
+		}
+		else
+		{
+			Get()->MainInputProcessor->HandleMouseButtonDown(MouseButton, MousePosition);
+			for (IInputProcessor* InputProcessor : Get()->InputProcessors)
+			{
+				InputProcessor->HandleMouseButtonDown(MouseButton, MousePosition);
+			}
+		}
+		break;
+	}
+
+	//鼠标移动
+	case WM_NCMOUSEMOVE:
+	case WM_MOUSEMOVE:
+	{
+		int xPos = GET_X_LPARAM(lParam);
+		int yPos = GET_Y_LPARAM(lParam);
+		const Vector2d MousePosition = Vector2d(xPos, yPos);
+
+		Get()->MainInputProcessor->HandleMouseMove(EMouseButton::Invalid, MousePosition);
+		for (IInputProcessor* InputProcessor : Get()->InputProcessors)
+		{
+			InputProcessor->HandleMouseButtonDown(EMouseButton::Invalid, MousePosition);
+		}
+
+		break;
+	}
+
+	//鼠标滚轮
+	case WM_MOUSEWHEEL:
+	{
+		const SHORT WheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+		int xPos = GET_X_LPARAM(lParam);
+		int yPos = GET_Y_LPARAM(lParam);
+		const Vector2d MousePosition = Vector2d(xPos, yPos);
+
+		Get()->MainInputProcessor->HandleMouseWheel(static_cast<float>(WheelDelta) / 120.f, MousePosition);
+		for (IInputProcessor* InputProcessor : Get()->InputProcessors)
+		{
+			InputProcessor->HandleMouseWheel(static_cast<float>(WheelDelta) / 120.f, MousePosition);
+		}
+
+		break;
+	}
+
+	//键盘输入
+	case WM_KEYDOWN:
+	case WM_KEYUP:
+	{
+		int ASCII = static_cast<int>(wParam);
+		int xPos = GET_X_LPARAM(lParam);
+		int yPos = GET_Y_LPARAM(lParam);
+		const Vector2d MousePosition = Vector2d(xPos, yPos);
+		if (msg == WM_KEYDOWN)
+		{
+			Get()->MainInputProcessor->HandleKeyDown(ASCII, MousePosition);
+			for (IInputProcessor* InputProcessor : Get()->InputProcessors)
+			{
+				InputProcessor->HandleKeyDown(ASCII, MousePosition);
+			}
+		}
+		else
+		{
+			Get()->MainInputProcessor->HandleKeyUp(ASCII, MousePosition);
+			for (IInputProcessor* InputProcessor : Get()->InputProcessors)
+			{
+				InputProcessor->HandleKeyUp(ASCII, MousePosition);
+			}
+		}
+
+		break;
+	}
+
+	default:
+		return DefWindowProc(hWnd, msg, wParam, lParam);
 	}
 	return DefWindowProc(hWnd, msg, wParam, lParam);
 }
@@ -87,7 +277,7 @@ bool Application::RegisterWindow(HINSTANCE hInstance)
 {
 	WNDCLASSEX wcex;
 	wcex.cbSize = sizeof(WNDCLASSEX);
-	wcex.style = CS_HREDRAW | CS_VREDRAW;
+	wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
 	wcex.lpfnWndProc = WndProc;
 	wcex.cbClsExtra = 0;
 	wcex.cbWndExtra = 0;

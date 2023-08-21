@@ -2,6 +2,8 @@
 #include <vector>
 
 class IInputProcessor;
+enum class EKeyState;
+
 class Application
 {
 public:
@@ -10,13 +12,18 @@ public:
 	bool Init(HINSTANCE hInstance, const wchar_t* title, int x, int y, int width, int height);
 	bool Run();
 
+	void Tick(float DeltaTime);
+
 	void RegisterInputProcessor(IInputProcessor* InputProcessor, const int Index = -1);
 	void UnRegisterInputProcessor(IInputProcessor* InputProcessor);
+
+	EKeyState GetControlKeyState();
+	EKeyState GetShiftKeyState();
 
 	HWND hWnd;
 	HINSTANCE hInstance;
 private:
-	Application() {}
+	Application();
 	~Application() {}
 	Application(const Application& other){};
 	Application& operator =(const Application& other){};
@@ -27,4 +34,9 @@ private:
 
 	static Application* app;
 	std::vector<IInputProcessor*> InputProcessors;
+
+	IInputProcessor* MainInputProcessor;
+
+	bool bPressedControl = false;
+	bool bPressedShift = false;
 };
