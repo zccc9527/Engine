@@ -13,22 +13,39 @@
 namespace TMP
 {
 	template<typename... Args>
-	using void_t = void;
-
-	template<typename T, typename U = void>
-	struct is_operator
-	{
-		static constexpr bool value = false;
-	};
-	template<typename T>
-	struct is_operator<T, void_t<decltype(std::declval<T>()())>>
+	struct is_type
 	{
 		static constexpr bool value = true;
 	};
-	template<typename T>
-	constexpr bool is_operator_v = is_operator<T>::value;
+	template<typename... Args>
+	constexpr bool is_type_v = is_type<Args...>::value;
+
+	//判断是否重载了括号运算符，即可执行。
+	template<typename T, typename... Args>
+	requires (is_type_v<decltype(std::declval<T>()(std::declval<Args>()...))>)
+	struct is_operator
+	{
+		static constexpr bool value = true;
+	};
+	template<typename T, typename... Args>
+	constexpr bool is_operator_v = is_operator<T, Args...>::value;
+
+	template<std::size_t... Index>
+	struct Indices {};
+
+	template<std::size_t N, std::size_t... args>
+	struct build_index
+	{
+		using type = build_index<N - 1, N - 1, args...>::type;
+	};
+	template<std::size_t... args>
+	struct build_index<0, args...>
+	{
+		using type = Indices<args...>;
+	};
 }
 
+//委托接口类，只包含一个Execute的纯虚函数
 template<typename Ret, typename... Args>
 class IDelegate
 {
@@ -38,38 +55,40 @@ public:
 	virtual Ret Execute(Args... args) = 0;
 };
 
-template<bool bConst, class C, class Ret, typename... Args>
+//用一个结构体来统一不同类型的类成员函数指针(const和非const)
+template<bool bConst, class C, typename Ret, typename... Args>
 struct MemberFuncPtr;
-template<class C, class Ret, typename... Params, typename... Payload>
+template<class C, typename Ret, typename... Params, typename... Payload>
 struct MemberFuncPtr<false, C, Ret( Params...), Payload...>
 {
 	using type = Ret(C::*)(Params..., Payload...);
 };
-template<class C, class Ret, typename... Params, typename... Payload>
+template<class C, typename Ret, typename... Params, typename... Payload>
 struct MemberFuncPtr<true, C, Ret(Params...), Payload...>
 {
 	using type = Ret(C::*)(Params..., Payload...) const;
 };
 
+//只针对类成员函数委托
 template<bool bConst, class C, class Ret, typename... Params>
 class MemberDelegate;
 template<bool bConst, class C, class Ret, typename... Params, typename... Payload>
-class MemberDelegate<bConst, C, Ret(Params...), Payload...> : IDelegate<Ret, Params...>
+class MemberDelegate<bConst, C, Ret(Params...), Payload...> : public IDelegate<Ret, Params...>
 {
 public:
-	using FuncPtr = MemberFuncPtr<bConst, C, Ret, Params..., Payload...>::type;
+	using FuncPtr = typename MemberFuncPtr<bConst, C, Ret(Params...), Payload...>::type; //类成员函数指针
 	MemberDelegate(C* p, FuncPtr func, Payload... payload) : m_p(p), CallBack(func), m_payload(std::make_tuple(payload...)) {}
 
 	virtual Ret Execute(Params... params) override
 	{
-		return Execute_Internal(std::forward<Params>(params)..., std::index_sequence_for<Payload...>());
+		return Execute_Internal(std::forward<Params>(params)..., TMP::build_index<sizeof...(Payload)>::type());
 	}
 
 private:
-	template<std::size_t... Indices>
-	Ret Execute_Internal(Params... params, std::index_sequence<Indices...>)
+	template<std::size_t... Index>
+	Ret Execute_Internal(Params... params, TMP::Indices<Index...>)
 	{
-		return (m_p->*CallBack)(std::forward<Params>(params)..., std::get<Indices>(m_payload)...);
+		return (m_p->*CallBack)(std::forward<Params>(params)..., std::get<Index>(m_payload)...);
 	}
 	
 	C* m_p;
@@ -77,27 +96,31 @@ private:
 	std::tuple<Payload...> m_payload;
 };
 
-template<bool bConst, class Ret, typename... Params>
+template<class Ret, typename... Params>
 class StaticDelegate;
-template<bool bConst, class Ret, typename... Params, typename... Payload>
-class StaticDelegate<bConst, Ret(Params...), Payload...> : public IDelegate<Ret, Params...>
+template<class Ret, typename... Params, typename... Payload>
+class StaticDelegate<Ret(Params...), Payload...> : public IDelegate<Ret, Params...>
 {
 public:
-	StaticDelegate(Ret(*func)(Params..., Payload...), Payload... payload) : CallBack(func), m_payload(std::make_tuple(payload...)){}
+	using FuncPtr = Ret(*)(Params..., Payload...);
+	StaticDelegate(FuncPtr func, Payload... payload) : CallBack(func), m_payload(std::make_tuple(payload...))
+	{
+		TMP::is_operator_v<decltype(CallBack), Params..., Payload...>;
+	}
 
 	virtual Ret Execute(Params... params) override
 	{
-		return Execute_Internal(std::forward<Params>(params)..., std::index_sequence_for<Payload...>());
+		return Execute_Internal(std::forward<Params>(params)..., TMP::build_index<sizeof...(Payload)>::type());
 	}
 
 private:
-	template<std::size_t... Indices>
-	Ret Execute_Internal(Params... params, std::index_sequence<Indices...>)
+	template<std::size_t... Index>
+	Ret Execute_Internal(Params... params, TMP::Indices<Index...>)
 	{
-		return CallBack(std::forward<Params>(params)..., std::get<Indices>(m_payload)...);
+		return CallBack(std::forward<Params>(params)..., std::get<Index>(m_payload)...);
 	}
 
-	Ret(*CallBack)(Params..., Payload...);
+	FuncPtr CallBack;
 	std::tuple<Payload...> m_payload;
 };
 
@@ -107,17 +130,20 @@ template<typename TLambda, class Ret, typename... Params, typename... Payload>
 class LambdaDelegate<TLambda, Ret(Params...), Payload...> : public IDelegate<Ret, Params...>
 {
 public:
-	LambdaDelegate(TLambda Lambda, Payload... payload) : m_Lambda(Lambda), m_payload(std::make_tuple(payload...)) {}
+	LambdaDelegate(TLambda Lambda, Payload... payload) : m_Lambda(Lambda), m_payload(std::make_tuple(payload...)) 
+	{
+		TMP::is_operator_v<TLambda, Params..., Payload...>; //检查类型是否正确
+	}
 
 	virtual Ret Execute(Params... params) override
 	{
-		return Execute_Internal(std::forward<Params>(params)..., std::index_sequence_for<Payload...>());
+		return Execute_Internal(std::forward<Params>(params)..., TMP::build_index<sizeof...(Payload)>::type());
 	}
 private:
-	template<std::size_t... Indices>
-	Ret Execute_Internal(Params... params, std::index_sequence<Indices...>)
+	template<std::size_t... Index>
+	Ret Execute_Internal(Params... params, TMP::Indices<Index...>)
 	{
-		return (Ret)(m_Lambda(std::forward<Params>(params)..., std::get<Indices>(m_payload)...));
+		return (Ret)(m_Lambda(std::forward<Params>(params)..., std::get<Index>(m_payload)...));
 	}
 
 	TLambda m_Lambda;
@@ -136,11 +162,23 @@ public:
 	{
 		CreateMember(pObject, FuncPtr, std::forward<Payload>(payload)...);
 	}
-	
 	template<class C, typename... Payload>
 	void BindMember(C* pObject, Ret(C::* FuncPtr)(Params..., Payload...) const, Payload...payload)
 	{
 		CreateMember(pObject, FuncPtr, std::forward<Payload>(payload)...);
+	}
+
+	template<class C, class D, typename... Payload>
+	void BindMember(C* pObject, Ret(D::* FuncPtr)(Params..., Payload...), Payload...payload)
+	{
+		D* pObject2 = static_cast<D*>(pObject);
+		CreateMember(pObject2, FuncPtr, std::forward<Payload>(payload)...);
+	}
+	template<class C, class D, typename... Payload>
+	void BindMember(C* pObject, Ret(D::* FuncPtr)(Params..., Payload...) const, Payload...payload)
+	{
+		D* pObject2 = static_cast<D*>(pObject);
+		CreateMember(pObject2, FuncPtr, std::forward<Payload>(payload)...);
 	}
 	
 	template<typename... Payload>
@@ -193,7 +231,7 @@ private:
 	template<typename... Payload>
 	void CreateStatic(Ret(*FuncPtr)(Params..., Payload...), Payload... payload)
 	{
-		p = new StaticDelegate<false, Ret(Params...), Payload...>(FuncPtr, std::forward<Payload>(payload)...);
+		p = new StaticDelegate<Ret(Params...), Payload...>(FuncPtr, std::forward<Payload>(payload)...);
 	}
 
 	template<typename TLambda, typename... Payload>
