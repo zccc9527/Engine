@@ -164,10 +164,6 @@ LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	//ClipCursor,限制鼠标在矩形内移动，矩形坐标为屏幕坐标
 	//DragDetect,是否在拖动
 
-	if (msg == WM_DESTROY)
-	{
-		PostQuitMessage(0);
-	}
 	Get()->bPressedControl = (wParam & MK_CONTROL) ? false : true;
 	Get()->bPressedShift = (wParam & MK_SHIFT) ? false : true;
 	switch (msg)
@@ -180,6 +176,11 @@ LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			return -1;
 		}
 		break;
+	}
+	case WM_DESTROY:
+	{
+		Get()->SafeRelease(&Get()->pFactory);
+		PostQuitMessage(0);
 	}
 
 	case WM_PAINT:
