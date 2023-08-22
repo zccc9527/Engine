@@ -17,7 +17,7 @@ void ApplicationMessageHandle::Tick(float DeltaTime)
 
 bool ApplicationMessageHandle::HandleMouseButtonDown(EMouseButton MouseEvent, Vector2d MousePosition)
 {
-	SetCapture(Application::Get()->hWnd);
+	SetCapture(Application::Get()->m_hWnd);
 
 	if (MouseButtonDownDelegate.IsNotEmpty())
 	{

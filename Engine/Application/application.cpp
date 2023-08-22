@@ -3,8 +3,69 @@
 #include <windowsx.h>
 #include "ApplicationMessageHandle.h"
 #include <iostream>
+#pragma comment(lib, "d2d1")
 
 Application* Application::app = nullptr;
+
+HRESULT Application::CreateGraphicsResource(HWND hWnd)
+{
+	HRESULT hr = S_OK;
+	if (pRenderTarget == nullptr)
+	{
+		RECT rc;
+		GetClientRect(hWnd, &rc);
+		D2D1_SIZE_U size = D2D1::SizeU(rc.right - rc.left, rc.bottom - rc.top);
+
+		if (pFactory)
+		{
+			hr = pFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(hWnd, size), &pRenderTarget);
+		}
+		if (SUCCEEDED(hr))
+		{
+			hr = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gray), &GrayBrush);
+		}
+		if (SUCCEEDED(hr))
+		{
+			hr = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Blue), &BlueBrush);
+		}
+	}
+	return hr;
+}
+
+void Application::ReleaseAllResource()
+{
+	SafeRelease(&pRenderTarget);
+	SafeRelease(&GrayBrush);
+	SafeRelease(&BlueBrush);
+}
+
+void Application::OnPaint(HWND hWnd)
+{
+	HRESULT hr = Get()->CreateGraphicsResource(hWnd);
+	if (SUCCEEDED(hr))
+	{
+		PAINTSTRUCT ps;
+		BeginPaint(hWnd, &ps);
+		if (Get()->pRenderTarget)
+		{
+			D2D1_SIZE_F size = pRenderTarget->GetSize();
+			Get()->pRenderTarget->BeginDraw();
+			Get()->pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::White));
+			Get()->pRenderTarget->DrawLine(D2D1::Point2F(100, 100), D2D1::Point2F(500, 500), Get()->GrayBrush, 1.0f);
+
+			Get()->pRenderTarget->DrawLine(D2D1::Point2F(0, size.height / 2), D2D1::Point2F(size.width, size.height / 2), Get()->BlueBrush, 1.0f);
+			Get()->pRenderTarget->DrawLine(D2D1::Point2F(size.width / 2, 0), D2D1::Point2F(size.width / 2, size.height), Get()->BlueBrush, 1.0f);
+
+			hr = Get()->pRenderTarget->EndDraw();
+			if (FAILED(hr) || hr == D2DERR_RECREATE_TARGET)
+			{
+				Get()->ReleaseAllResource();
+			}
+		}
+		EndPaint(hWnd, &ps);
+
+	}
+}
 
 Application* Application::Get()
 {
@@ -30,8 +91,8 @@ bool Application::Init(HINSTANCE hInstance, const wchar_t* title, int x, int y, 
 	{
 		return false;
 	}
-	ShowWindow(hWnd, SW_SHOW);
-	UpdateWindow(hWnd);
+	ShowWindow(m_hWnd, SW_SHOW);
+	UpdateWindow(m_hWnd);
 
 	return true;
 }
@@ -111,6 +172,35 @@ LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	Get()->bPressedShift = (wParam & MK_SHIFT) ? false : true;
 	switch (msg)
 	{
+	//创建时
+	case WM_CREATE:
+	{
+		if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &(Get()->pFactory))))
+		{
+			return -1;
+		}
+		break;
+	}
+
+	case WM_PAINT:
+	{
+		Get()->OnPaint(hWnd);
+		break;
+	}
+
+	case WM_SIZE:
+	{
+		if (Get()->pRenderTarget)
+		{
+			RECT rc;
+			GetClientRect(hWnd, &rc);
+			D2D1_SIZE_U size = D2D1::SizeU(rc.right - rc.left, rc.bottom - rc.top);
+			Get()->pRenderTarget->Resize(size);
+		}
+
+		break;
+	}
+
 	//鼠标事件
 	case WM_LBUTTONDOWN:
 	case WM_LBUTTONDBLCLK:
@@ -308,6 +398,6 @@ bool Application::CreateMyWindow(HINSTANCE hInstance, const wchar_t* title, int 
 		MessageBox(NULL, L"创建窗口失败!", L"Error", MB_OK | MB_ICONSTOP);
 		return false;
 	}
-	this->hWnd = hWnd;
+	this->m_hWnd = hWnd;
 	return true;
 }

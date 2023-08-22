@@ -1,5 +1,6 @@
 ﻿#include <windows.h>
 #include <vector>
+#include <d2d1.h>
 
 class IInputProcessor;
 enum class EKeyState;
@@ -20,7 +21,7 @@ public:
 	EKeyState GetControlKeyState();
 	EKeyState GetShiftKeyState();
 
-	HWND hWnd;
+	HWND m_hWnd;
 	HINSTANCE hInstance;
 private:
 	Application();
@@ -39,4 +40,24 @@ private:
 
 	bool bPressedControl = false;
 	bool bPressedShift = false;
+
+	ID2D1Factory* pFactory = nullptr; //d2d工厂
+	ID2D1HwndRenderTarget* pRenderTarget; //d2d绘制接口
+	ID2D1SolidColorBrush* GrayBrush; //d2d笔刷
+	ID2D1SolidColorBrush* BlueBrush;
+
+	template<typename T>
+	inline void SafeRelease(T** ppInterfaceToRelease)
+	{
+		if (*ppInterfaceToRelease != nullptr)
+		{
+			(*ppInterfaceToRelease)->Release();
+			(*ppInterfaceToRelease) = nullptr;
+		}
+	}
+
+	HRESULT CreateGraphicsResource(HWND hWnd);
+	void ReleaseAllResource();
+
+	void OnPaint(HWND hWnd);
 };
