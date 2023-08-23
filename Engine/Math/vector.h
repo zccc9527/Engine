@@ -32,8 +32,7 @@ struct Vector4Type : Vector3Type<T>
 {
 	T w;
 
-	Vector4Type(const T& x, const T& y, const T& z, const T& w) : Vector3Type<T>(x, y, z), w(w) {}
-	Vector4Type(const T& x, const T& y, const T& z) : Vector3Type<T>(x, y, z), w(1) {}
+	Vector4Type(const T& x, const T& y, const T& z, const T& w = 1.0f) : Vector3Type<T>(x, y, z), w(w) {}
 	Vector4Type(const T& v) : Vector4Type(v, v, v) {}
 	Vector4Type() : Vector4Type(T{}) {}
 };

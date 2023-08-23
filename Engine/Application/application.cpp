@@ -3,6 +3,7 @@
 #include <windowsx.h>
 #include "ApplicationMessageHandle.h"
 #include <iostream>
+
 #pragma comment(lib, "d2d1")
 
 Application* Application::app = nullptr;
@@ -20,15 +21,6 @@ HRESULT Application::CreateGraphicsResource(HWND hWnd)
 		{
 			hr = pFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(hWnd, size), &pRenderTarget);
 		}
-		if (SUCCEEDED(hr))
-		{
-			hr = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gray), &GrayBrush);
-		}
-		if (SUCCEEDED(hr))
-		{
-			D2D1::ColorF cof(1, 0, 0);
-			hr = pRenderTarget->CreateSolidColorBrush(cof, &BlueBrush);
-		}
 	}
 	return hr;
 }
@@ -36,36 +28,46 @@ HRESULT Application::CreateGraphicsResource(HWND hWnd)
 void Application::ReleaseAllResource()
 {
 	SafeRelease(&pRenderTarget);
-	SafeRelease(&GrayBrush);
-	SafeRelease(&BlueBrush);
 }
 
 void Application::OnPaint(HWND hWnd)
 {
-	HRESULT hr = Get()->CreateGraphicsResource(hWnd);
-	if (SUCCEEDED(hr))
+	std::cout << "paint" << std::endl;
+	
+	HRESULT hr = S_OK; 
+	if (pRenderTarget == nullptr)
 	{
-		PAINTSTRUCT ps;
-		BeginPaint(hWnd, &ps);
-		if (Get()->pRenderTarget)
-		{
-			D2D1_SIZE_F size = pRenderTarget->GetSize();
-			Get()->pRenderTarget->BeginDraw();
-			Get()->pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::White));
-			Get()->pRenderTarget->DrawLine(D2D1::Point2F(100, 100), D2D1::Point2F(500, 500), Get()->GrayBrush, 1.0f);
-
-			Get()->pRenderTarget->DrawLine(D2D1::Point2F(0, size.height / 2), D2D1::Point2F(size.width, size.height / 2), Get()->BlueBrush, 1.0f);
-			Get()->pRenderTarget->DrawLine(D2D1::Point2F(size.width / 2, 0), D2D1::Point2F(size.width / 2, size.height), Get()->BlueBrush, 1.0f);
-
-			hr = Get()->pRenderTarget->EndDraw();
-			if (FAILED(hr) || hr == D2DERR_RECREATE_TARGET)
-			{
-				Get()->ReleaseAllResource();
-			}
-		}
-		EndPaint(hWnd, &ps);
-
+		hr = CreateGraphicsResource(hWnd);
 	}
+	if (pRenderTarget && SUCCEEDED(hr))
+	{
+		D2D1_SIZE_F size = pRenderTarget->GetSize();
+
+		pRenderTarget->BeginDraw();
+		pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::White));
+
+		DrawLine(Vector2f(100, 100), Vector2f(500, 500), Color(1, 0, 0), 1.0f);
+		DrawLine(Vector2f(0, size.height / 2), Vector2f(size.width,size.height / 2), Color(0, 0, 0), 1.0f);
+		DrawLine(Vector2f(size.width / 2, 0), Vector2f(size.width / 2,size.height), Color(0.5, 0.5, 0.5), 1.0f);
+
+		pRenderTarget->EndDraw();
+	}
+}
+
+HRESULT Application::DrawLine(Vector2f Start, Vector2f End, Color c, float width)
+{
+	HRESULT hr = S_OK;
+	if (pFactory && pRenderTarget)
+	{
+		D2D1::ColorF col(c.x, c.y, c.z, c.w);
+		ID2D1SolidColorBrush* Brush;
+		hr = pRenderTarget->CreateSolidColorBrush(col, &Brush);
+		if (SUCCEEDED(hr))
+		{
+			pRenderTarget->DrawLine(D2D1::Point2F(Start.x, Start.y), D2D1::Point2F(End.x, End.y), Brush, width);
+		}
+	}
+	return hr;
 }
 
 Application* Application::Get()
@@ -180,6 +182,14 @@ LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	}
 	case WM_DESTROY:
 	{
+		/*if (Get()->pRenderTarget)
+		{
+			HRESULT hr = Get()->pRenderTarget->EndDraw();
+			if (FAILED(hr) || hr == D2DERR_RECREATE_TARGET)
+			{
+				Get()->ReleaseAllResource();
+			}
+		}*/
 		Get()->SafeRelease(&Get()->pFactory);
 		PostQuitMessage(0);
 	}
