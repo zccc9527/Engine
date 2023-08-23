@@ -33,6 +33,7 @@ namespace TMP
 	template<std::size_t... Index>
 	struct Indices {};
 
+	//生成Indices<0, 1, ..., N-1> 编译器常量用于std::get<Index>(tuple);
 	template<std::size_t N, std::size_t... args>
 	struct build_index
 	{

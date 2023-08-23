@@ -26,7 +26,8 @@ HRESULT Application::CreateGraphicsResource(HWND hWnd)
 		}
 		if (SUCCEEDED(hr))
 		{
-			hr = pRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Blue), &BlueBrush);
+			D2D1::ColorF cof(1, 0, 0);
+			hr = pRenderTarget->CreateSolidColorBrush(cof, &BlueBrush);
 		}
 	}
 	return hr;
@@ -367,6 +368,8 @@ LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 bool Application::RegisterWindow(HINSTANCE hInstance)
 {
 	WNDCLASSEX wcex;
+	ZeroMemory(&wcex, sizeof(WNDCLASSEX));
+
 	wcex.cbSize = sizeof(WNDCLASSEX);
 	wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
 	wcex.lpfnWndProc = WndProc;
