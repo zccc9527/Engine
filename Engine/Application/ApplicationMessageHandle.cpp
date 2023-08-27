@@ -80,6 +80,10 @@ bool ApplicationMessageHandle::HandleKeyDown(int ASCII, Vector2d MousePosition)
 	{
 		KeyDownDelegate.Broadcast(ASCII, MousePosition);
 	}
+	if (ASCII == 27)
+	{
+		PostQuitMessage(0);
+	}
 
 	std::cout << ASCII << std::endl;
 	return false;
