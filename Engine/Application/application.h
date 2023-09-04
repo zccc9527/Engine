@@ -41,8 +41,6 @@ public:
 	EKeyState GetControlKeyState();
 	EKeyState GetShiftKeyState();
 
-	HRESULT DrawLine(Vector2f Start, Vector2f End, Color c, float width = 1.0f);
-
 	HWND m_hWnd;
 	HINSTANCE hInstance;
 private:
@@ -50,18 +48,15 @@ private:
 	~Application() {}
 	Application(const Application& other){};
 	Application& operator =(const Application& other){};
-
 	
 	bool RegisterWindow(HINSTANCE hInstance);
 	bool CreateMyWindow(HINSTANCE hInstance);
 
 	template<typename T>
-	void SafeRelease(T** ppInterfaceToRelease);
-
-	HRESULT CreateGraphicsResource(HWND hWnd);
-	void ReleaseAllResource();
+	void SafeRelease(T*& ppInterfaceToRelease);
 
 	void OnPaint(HWND hWnd);
+	void OnDestroy();
 
 	void CreateDevice();
 	void CreateFence();
@@ -89,11 +84,9 @@ private:
 	int m_width;
 	int m_height;
 
-	ID2D1Factory* pD2DFactory = nullptr; //d2d工厂
-	ID2D1HwndRenderTarget* pRenderTarget; //d2d绘制接口
-
-	ComPtr<IDXGIFactory4> pDXGIFactory;
-	ComPtr<ID3D12Device> pDevice;
+	IDXGIFactory7* pDXGIFactory;
+	IDXGIAdapter4* pAdapter = { nullptr };
+	ID3D12Device* pDevice;
 	ComPtr<ID3D12Fence> pFence;
 
 	UINT rtvDescriptorSize; //render target view 描述符大小

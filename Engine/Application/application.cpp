@@ -12,64 +12,15 @@
 
 Application* Application::app = nullptr;
 
-HRESULT Application::CreateGraphicsResource(HWND hWnd)
-{
-	HRESULT hr = S_OK;
-	if (pRenderTarget == nullptr)
-	{
-		RECT rc;
-		GetClientRect(hWnd, &rc);
-		D2D1_SIZE_U size = D2D1::SizeU(rc.right - rc.left, rc.bottom - rc.top);
-
-		if (pD2DFactory)
-		{
-			hr = pD2DFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(hWnd, size), &pRenderTarget);
-		}
-	}
-	return hr;
-}
-
-void Application::ReleaseAllResource()
-{
-	SafeRelease(&pRenderTarget);
-}
-
 void Application::OnPaint(HWND hWnd)
 {
-	HRESULT hr = S_OK; 
-	if (pRenderTarget == nullptr)
-	{
-		hr = CreateGraphicsResource(hWnd);
-	}
-	if (pRenderTarget && SUCCEEDED(hr))
-	{
-		D2D1_SIZE_F size = pRenderTarget->GetSize();
-
-		pRenderTarget->BeginDraw();
-		pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::White));
-
-		DrawLine(Vector2f(100, 100), Vector2f(500, 500), Color(1, 0, 0), 1.0f);
-		DrawLine(Vector2f(0, size.height / 2), Vector2f(size.width,size.height / 2), Color(0, 0, 0), 1.0f);
-		DrawLine(Vector2f(size.width / 2, 0), Vector2f(size.width / 2,size.height), Color(0.5, 0.5, 0.5), 1.0f);
-
-		pRenderTarget->EndDraw();
-	}
+	
 }
 
-HRESULT Application::DrawLine(Vector2f Start, Vector2f End, Color c, float width)
+void Application::OnDestroy()
 {
-	HRESULT hr = S_OK;
-	if (pD2DFactory && pRenderTarget)
-	{
-		D2D1::ColorF col(c.x, c.y, c.z, c.w);
-		ID2D1SolidColorBrush* Brush;
-		hr = pRenderTarget->CreateSolidColorBrush(col, &Brush);
-		if (SUCCEEDED(hr))
-		{
-			pRenderTarget->DrawLine(D2D1::Point2F(Start.x, Start.y), D2D1::Point2F(End.x, End.y), Brush, width);
-		}
-	}
-	return hr;
+	SafeRelease(pDXGIFactory);
+	SafeRelease(pDevice);
 }
 
 Application* Application::Get()
@@ -124,12 +75,14 @@ bool Application::InitWindow(HINSTANCE hInstance)
 bool Application::InitDirectX()
 {
 	//开启D3D12调试信息
-#if defined(DEBUG) || defined(_DEBUG)
-	{
-		ComPtr<ID3D12Debug> debugController;
-		ThrowIfFailedM(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)), L"Open Debug Message Failed");
-		debugController->EnableDebugLayer();
-	}
+	unsigned int dxgi_factory_flags = { 0 };
+#ifdef _DEBUG
+{
+		/*ComPtr<ID3D12Debug3> DebugInterface;
+		DXCall(D3D12GetDebugInterface(IID_PPV_ARGS(&DebugInterface)));
+		DebugInterface->EnableDebugLayer();*/
+	dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
+}
 #endif
 
 	CreateDevice();//创建设备
@@ -138,7 +91,7 @@ bool Application::InitDirectX()
 	SetMSAA();
 	CreateCommandObject();//创建命令队列，命令分配器，命令列表
 	CreateSwapChain();//创建交换链
-	CreateDescriptorHeap();//创建描述符堆
+	CreateDescriptorHeap();//创建描述符堆,资源描述符只是描述一块内存是什么资源
 
 	OnResize();
 
@@ -154,7 +107,7 @@ void Application::OnResize()
 
 	FlushCommandQueue();
 
-	ThrowIfFailedM(pCommandList->Reset(pCommandAllocator.Get(), nullptr), L"Resize Command List Failed");
+	DXCall(pCommandList->Reset(pCommandAllocator.Get(), nullptr));
 
 	for (int i = 0; i < 2; i++)
 	{
@@ -162,12 +115,21 @@ void Application::OnResize()
 	}
 	depthStencilBuffer.Reset();
 
-	ThrowIfFailedM(pSwapChain->ResizeBuffers(2, m_width, m_height, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH), L"Resize Swap Chain Failed");
+	DXCall(pSwapChain->ResizeBuffers(2, m_width, m_height, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
 
 	mCurrentBackBuffer = 0;
 
+	// 创建新的缓冲区
 	CreateRTV();
 	CreateDSV();
+
+	// 执行重新创建的命令
+	DXCall(pCommandList->Close());
+	ID3D12CommandList* cmdLists[] = { pCommandList.Get() }; //声明并定义命令列表数组
+	pCommandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);//将命令从命令列表传至命令队列
+
+	FlushCommandQueue();
+
 	CreateViewportAndScissorRect();
 }
 
@@ -261,15 +223,11 @@ LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	//创建时
 	case WM_CREATE:
 	{
-		if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &(Get()->pD2DFactory))))
-		{
-			return -1;
-		}
 		break;
 	}
 	case WM_DESTROY:
 	{
-		Get()->SafeRelease(&Get()->pD2DFactory);
+		OnDestroy();
 		PostQuitMessage(0);
 	}
 
@@ -317,13 +275,6 @@ LRESULT CALLBACK Application::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 					OnResize();
 				}
 			}
-		}
-		if (Get()->pRenderTarget)
-		{
-			RECT rc;
-			GetClientRect(hWnd, &rc);
-			D2D1_SIZE_U size = D2D1::SizeU(rc.right - rc.left, rc.bottom - rc.top);
-			Get()->pRenderTarget->Resize(size);
 		}
 		break;
 	}
@@ -545,32 +496,33 @@ bool Application::CreateMyWindow(HINSTANCE hInstance)
 }
 
 template<typename T>
-void Application::SafeRelease(T** ppInterfaceToRelease)
+void Application::SafeRelease(T*& ppInterfaceToRelease)
 {
-	if (*ppInterfaceToRelease != nullptr)
+	if (ppInterfaceToRelease != nullptr)
 	{
-		(*ppInterfaceToRelease)->Release();
-		(*ppInterfaceToRelease) = nullptr;
+		ppInterfaceToRelease->Release();
+		ppInterfaceToRelease = nullptr;
 	}
 }
 
 void Application::CreateDevice()
 {
-	//创建dxgi工厂
-	ThrowIfFailedM(CreateDXGIFactory1(IID_PPV_ARGS(&pDXGIFactory)), L"Create DXGIFactory Failed!");
+	//创建dxgi工厂, uuid表示独一无二的标识符 IID_PPV_ARGS(&pDXGIFactory) == (__uuidof(IDXGIFactory7), (void**)&pDXGIFactory))
+	DXCall(CreateDXGIFactory2(0, __uuidof(IDXGIFactory7), (void**)&pDXGIFactory));
 
 	//根据工厂创建设备
-	ThrowIfFailed(D3D12CreateDevice(nullptr, //nullptr为主适配器
-		D3D_FEATURE_LEVEL_12_0,				 //级别
+	DXCall(D3D12CreateDevice(nullptr, //nullptr为主适配器
+		D3D_FEATURE_LEVEL_12_1,				 //级别
 		IID_PPV_ARGS(&pDevice))
 	);
+	NAME_D3D12_OBJECT(pDevice, L"Main Device");
 }
 
 void Application::CreateFence()
 {
 	if (pDevice)
 	{
-		ThrowIfFailed(pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&pFence)));
+		DXCall(pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&pFence)));
 	}
 }
 
@@ -594,7 +546,7 @@ void Application::SetMSAA()
 		msaaQualityLevels.Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
 		msaaQualityLevels.NumQualityLevels = 0;
 
-		ThrowIfFailed(pDevice->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &msaaQualityLevels, sizeof(msaaQualityLevels)));
+		DXCall(pDevice->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &msaaQualityLevels, sizeof(msaaQualityLevels)));
 		//NumQualityLevels在Check函数里会进行设置
 		//如果支持MSAA，则Check函数返回的NumQualityLevels > 0
 		assert(msaaQualityLevels.NumQualityLevels > 0);
@@ -605,24 +557,23 @@ void Application::CreateCommandObject()
 {
 	if (pDevice)
 	{
-		//创建命令队列
+		//创建命令队列，需要一个描述结构来定义要什么样的命令队列
 		D3D12_COMMAND_QUEUE_DESC commandQueueDesc = {};
 		commandQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 		commandQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-		ThrowIfFailedM(pDevice->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&pCommandQueue)), L"Create Command Queue Failed");
+		DXCall(pDevice->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&pCommandQueue)));
 
 		//创建命令分配器
-		ThrowIfFailedM(pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&pCommandAllocator)), L"Create Command Allocator Failed");
+		DXCall(pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&pCommandAllocator)));
 
 		//创建命令列表
-		ThrowIfFailedM(pDevice->CreateCommandList(
+		DXCall(pDevice->CreateCommandList(
 			0, //掩码值为0，单GPU
 			D3D12_COMMAND_LIST_TYPE_DIRECT, //命令列表类型
 			pCommandAllocator.Get(),	//命令分配器指针
 			nullptr,						//渲染流水线状态对象PSO(pipeline state object),这里不绘制为nullptr
 			IID_PPV_ARGS(&pCommandList)
-		), L"Create Command List Failed"
-		);
+		));
 
 		//首先需要重置命令列表，因为在第一次引用命令列表时需要对它进行重置，而重置前必须先关闭
 		pCommandList->Close();
@@ -633,7 +584,10 @@ void Application::CreateSwapChain()
 {
 	if (pDXGIFactory)
 	{
+		//1、释放已有的交换链
 		pSwapChain.Reset();
+
+		//2、填充描述结构，指明要创建什么样的交换链。
 		DXGI_SWAP_CHAIN_DESC swapChainDesc;
 		swapChainDesc.BufferDesc.Width = m_width;		//缓冲区大小
 		swapChainDesc.BufferDesc.Height = m_height;
@@ -651,7 +605,8 @@ void Application::CreateSwapChain()
 		swapChainDesc.BufferCount = 2;					//缓冲区数量
 		swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;	//自适应窗口模式,自动选择最适于当前窗口尺寸的显示模式
 
-		ThrowIfFailed(pDXGIFactory->CreateSwapChain(pCommandQueue.Get(), &swapChainDesc, pSwapChain.GetAddressOf()));
+		//3、调用Factory的CreateSwapChain函数创建交换链。
+		DXCall(pDXGIFactory->CreateSwapChain(pCommandQueue.Get(), &swapChainDesc, &pSwapChain));
 	}
 }
 
@@ -663,7 +618,7 @@ void Application::CreateDescriptorHeap()
 	rtvDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	rtvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 	rtvDescriptorHeapDesc.NodeMask = 0;
-	ThrowIfFailedM(pDevice->CreateDescriptorHeap(&rtvDescriptorHeapDesc, IID_PPV_ARGS(&rtvDescriptorHeap)), L"Create rtv Descriptor Heap Failed");
+	DXCall(pDevice->CreateDescriptorHeap(&rtvDescriptorHeapDesc, IID_PPV_ARGS(&rtvDescriptorHeap)));
 
 	//再创建depth stencil view堆
 	D3D12_DESCRIPTOR_HEAP_DESC dsvDescriptorDesc;
@@ -671,7 +626,7 @@ void Application::CreateDescriptorHeap()
 	dsvDescriptorDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	dsvDescriptorDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	dsvDescriptorDesc.NodeMask = 0;
-	ThrowIfFailedM(pDevice->CreateDescriptorHeap(&dsvDescriptorDesc, IID_PPV_ARGS(&dsvDescriptorHeap)), L"Create dsv Descriptor Heap Failed");
+	DXCall(pDevice->CreateDescriptorHeap(&dsvDescriptorDesc, IID_PPV_ARGS(&dsvDescriptorHeap)));
 }
 
 void Application::CreateRTV()
@@ -709,13 +664,14 @@ void Application::CreateDSV()
 	dsvResourceDesc.SampleDesc.Count = 1;	//多重采样数量
 	dsvResourceDesc.SampleDesc.Quality = msaaQualityLevels.NumQualityLevels - 1;
 
-	CD3DX12_CLEAR_VALUE optClear;	//清除资源的优化值，提高清除操作的执行速度（CreateCommittedResource函数中传入）
+	// 清空缓存时候的默认值
+	CD3DX12_CLEAR_VALUE optClear;
 	optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
 	optClear.DepthStencil.Depth = 1.0f;
 	optClear.DepthStencil.Stencil = 0;
 
 	CD3DX12_HEAP_PROPERTIES HeapProperties(D3D12_HEAP_TYPE_DEFAULT);
-	ThrowIfFailed(pDevice->CreateCommittedResource(
+	DXCall(pDevice->CreateCommittedResource(
 		&HeapProperties,//堆类型为默认堆（不能写入）
 		D3D12_HEAP_FLAG_NONE,
 		&dsvResourceDesc,
@@ -737,15 +693,9 @@ void Application::CreateDSV()
 		dsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart()
 	);
 
-	//将资源从初始状态转换为深度缓冲区
+	//将资源从初始状态转换为深度写入状态
 	CD3DX12_RESOURCE_BARRIER Barrier = CD3DX12_RESOURCE_BARRIER::Transition(depthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 	pCommandList->ResourceBarrier(1, &Barrier);
-
-	ThrowIfFailedM(pCommandList->Close(), L"InitDirectX12 Command List Close Failed");
-	ID3D12CommandList* cmdLists[] = { pCommandList.Get() }; //声明并定义命令列表数组
-	pCommandQueue->ExecuteCommandLists(_countof(cmdLists), cmdLists);//将命令从命令列表传至命令队列
-
-	FlushCommandQueue();
 }
 
 void Application::FlushCommandQueue()
@@ -781,8 +731,8 @@ void Application::CreateViewportAndScissorRect()
 void Application::Draw()
 {
 	//重新分配命令分配器和命令列表
-	ThrowIfFailed(pCommandAllocator->Reset());
-	ThrowIfFailed(pCommandList->Reset(pCommandAllocator.Get(), nullptr));
+	DXCall(pCommandAllocator->Reset());
+	DXCall(pCommandList->Reset(pCommandAllocator.Get(), nullptr));
 
 	UINT& ref_mCurrentBackBuffer = mCurrentBackBuffer;
 
@@ -817,18 +767,19 @@ void Application::Draw()
 	//重新指定RenderTargetView和DepthStencilView
 	pCommandList->OMSetRenderTargets(1, &rtvHandle, true, &dsvHandle);
 
-	//由渲染状态转换为呈现状态
+	//由渲染状态转换为呈现状态, 后缓冲区切换成PRESENT状态
 	CD3DX12_RESOURCE_BARRIER Barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(swapChainBuffer[ref_mCurrentBackBuffer].Get(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	pCommandList->ResourceBarrier(1, &Barrier2);
 	//完成命令的记录关闭命令列表
-	ThrowIfFailed(pCommandList->Close());
+	DXCall(pCommandList->Close());
 
+	// 添加命令列表到队列中并执行。
 	ID3D12CommandList* commandLists[] = { pCommandList.Get() };//声明并定义命令列表数组
 	pCommandQueue->ExecuteCommandLists(_countof(commandLists), commandLists);//将命令从命令列表传至命令队列
 
 	//交互缓冲区
-	ThrowIfFailed(pSwapChain->Present(0, 0));
+	DXCall(pSwapChain->Present(0, 0));
 	ref_mCurrentBackBuffer = (ref_mCurrentBackBuffer + 1) % 2;
 
 	FlushCommandQueue();
